@@ -1,0 +1,1 @@
+Create a standalone library for minc to mha file converter feature (SequenceIO)
