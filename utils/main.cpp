@@ -1,7 +1,8 @@
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageMaskSpatialObject.h"
-#include "gpu_rigidregistration.h"
+#include "usacquisitionobject.h"
+
 #include "vtkTransform.h"
 #include "vtkMatrix4x4.h"
 
@@ -35,36 +36,6 @@ int main(int argc, char* argv[])
         std::cout << "Help: " << args.GetHelp() << std::endl;
         return EXIT_FAILURE;
     }
-
-    char** newArgv = nullptr;
-    int newArgc = 0;
-    args.GetUnusedArguments(&newArgc, &newArgv);
-
-    if (newArgc < 3)
-    {
-        std::cout << "Usage: " << argv[0] << " movingImage fixedImage [options]" << std::endl;
-        std::cout << "Options: " << args.GetHelp() << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    movingImageFileName = newArgv[1];
-    fixedImageFileName = newArgv[2];
-
-    if (outputTransformFileName.empty())
-    {
-        std::cout << "No output transform file specified. Resulting transform will be written in outputTransform.h5" << std::endl;
-        outputTransformFileName = "outputTransform.xfm";
-    }
-
-    const unsigned int Dimension = 3;
-    using PixelType = float;
-    using ImageType = itk::Image<PixelType, Dimension>;
-    using MovingImageReaderType = itk::ImageFileReader<ImageType>;
-    using FixedImageReaderType = itk::ImageFileReader<ImageType>;
-    using ImageMaskType = itk::ImageMaskSpatialObject< 3 >;
-
-    ImageMaskType::Pointer fixedMask = nullptr;
-    ImageMaskType::Pointer movingMask = nullptr;
 
     // Reading moving image file
     MovingImageReaderType::Pointer movingReader = MovingImageReaderType::New();
@@ -119,84 +90,41 @@ int main(int argc, char* argv[])
         movingTransform->SetMatrix(mat);
 
     }
+*
 
-    if (!movingMaskFileName.empty())
-    {
-        // Reading moving mask file
-        using MaskReaderType = itk::ImageFileReader<ImageMaskType::ImageType>;
-        MaskReaderType::Pointer movingMaskReader = MaskReaderType::New();
-        movingMaskReader->SetFileName(movingMaskFileName.c_str());
-        std::cout << "Reading Moving Mask... " << movingMaskFileName << std::endl;
-
-        try
-        {
-            movingMaskReader->Update();
-            movingMask = ImageMaskType::New();
-            movingMask->SetImage(movingMaskReader->GetOutput());
-            movingMask->Update();
-        }
-        catch (itk::ExceptionObject& error)
-        {
-            std::cerr << "Error: " << error << std::endl;
-            return EXIT_FAILURE;
-        }
-    }
-
-    if (!fixedMaskFileName.empty())
-    {
-        // Reading fixed mask file
-        using MaskReaderType = itk::ImageFileReader<ImageMaskType::ImageType>;
-        MaskReaderType::Pointer fixedMaskReader = MaskReaderType::New();
-        fixedMaskReader->SetFileName(fixedMaskFileName.c_str());
-        std::cout << "Reading Fixed Mask... " << fixedMaskFileName << std::endl;
-
-        try
-        {
-            fixedMaskReader->Update();
-            fixedMask = ImageMaskType::New();
-            fixedMask->SetImage(fixedMaskReader->GetOutput());
-            fixedMask->Update();
-        }
-        catch (itk::ExceptionObject& error)
-        {
-            std::cerr << "Error: " << error << std::endl;
-            return EXIT_FAILURE;
-        }
-    }
-
-    GPU_RigidRegistration* rigidRegistrator = new GPU_RigidRegistration();
+    SequenceIO* sqIO = new SequenceIO();
 
     // Initialize parameters
-    rigidRegistrator->SetNumberOfPixels(128000);
-    rigidRegistrator->SetOrientationSelectivity(32);
-    rigidRegistrator->SetPopulationSize(100);
-    rigidRegistrator->SetPercentile(0.8);
-    rigidRegistrator->SetUseMask(true);
+    sqIO->SetNumberOfPixels(128000);
+    sqIO->SetOrientationSelectivity(32);
+    sqIO->SetPopulationSize(100);
+    sqIO->SetPercentile(0.8);
+    sqIO->SetUseMask(true);
 
     // Set image inputs
-    rigidRegistrator->SetItkSourceImage(movingImage);
-    rigidRegistrator->SetItkTargetImage(fixedImage);
+    sqIO->SetItkSourceImage(movingImage);
+    sqIO->SetItkTargetImage(fixedImage);
 
     if (movingTransform)
     {
-        rigidRegistrator->SetSourceVtkTransform(movingTransform);
+        sqIO->SetSourceVtkTransform(movingTransform);
     }
 
     // Set transform inputs
     vtkTransform* transform = vtkTransform::New();
-    rigidRegistrator->SetVtkTransform(transform);
+    sqIO->SetVtkTransform(transform);
 
     if (movingMask)
     {
-        rigidRegistrator->SetSourceMask(movingMask);
+        sqIO->SetSourceMask(movingMask);
     }
 
     if (fixedMask)
     {
-        rigidRegistrator->SetTargetMask(fixedMask);
+        sqIO->SetTargetMask(fixedMask);
     }
 
-    rigidRegistrator->runRegistration();
+
 
     // Write output transform
     vtkXFMWriter* transformWriter = vtkXFMWriter::New();
